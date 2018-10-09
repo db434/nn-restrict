@@ -2,6 +2,8 @@ import torch.utils.data as data
 import torchvision.datasets
 import torchvision.transforms as transforms
 
+import locations
+
 
 # TODO subclass an abstract Dataset class.
 class Cifar10(object):
@@ -12,9 +14,12 @@ class Cifar10(object):
     # Some sensible defaults.
     name = "CIFAR-10"
     default_model = "aaronnet"
+    location = locations.cifar10
+
+    # See training.lr_schedule.py for explanation.
+    default_lr = 0.1
+    default_lr_steps = [(80, 0.1), (80, 0.1)]
     default_epochs = 200
-    default_epoch_period = 80
-    location = "/local/scratch/ssd/cifar10"
                                               
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse',
                'ship', 'truck')

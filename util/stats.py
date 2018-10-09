@@ -2,7 +2,8 @@ from collections import OrderedDict
 import os
 import torch
 
-from . import checkpoint
+from . import checkpoint, log
+import models
 
 
 def data_distribution_hooks(model, activations=True, weights=True,
@@ -125,7 +126,7 @@ def _dump_weights(directory, model):
 def data_restore(directory, model):
     """Reverse the effect of `_dump_weights` by loading individual tensors
     into the model."""
-    print("Replacing model state with data from", directory)
+    log.info("Replacing model state with data from", directory)
 
     leaves = [module for module in model.modules()
               if len(list(module.children())) == 0]
@@ -256,12 +257,13 @@ def computation_cost_hooks(model, count_weights=True, count_operations=True):
     num_operations = 0
     
     # TODO: can get some double-counting here if there are multiple GPUs.
-    print("Warning: figures are only accurate if a single GPU is used.")
+    log.info("Warning: figures are only accurate if a single GPU is used.")
 
-    for module in modules:
-        if count_weights:
-            num_weights += module.num_weights()
-        if count_operations:
+    if count_weights:
+        num_weights = models.count_parameters(model)
+
+    if count_operations:
+        for module in modules:
             module.register_forward_hook(_count_operations)
 
 
@@ -277,3 +279,11 @@ def computation_costs():
     """Return the values computed here."""
     global num_operations, num_weights
     return num_operations, num_weights
+
+
+def computation_cost_csv(model_name):
+    """Return stats in CSV format."""
+    global num_operations, num_weights
+    header = "name,operations,weights"
+    data = ",".join([model_name, str(num_operations), str(num_weights)])
+    return header + "\n" + data

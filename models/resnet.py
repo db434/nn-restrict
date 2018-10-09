@@ -3,15 +3,16 @@ import math
 
 import structured.fully_connected as fc
 
-__all__ = ['ResNet', 
-           'resnet20', 'resnet32', 'resnet44', 'resnet56', 'resnet110',  # CIFAR
-           'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152']  # INet
+models = {"CIFAR-10": ["resnet20", "resnet32", "resnet44", "resnet56",
+                       "resnet110"],
+          "ImageNet": ["resnet18", "resnet34", "resnet50", "resnet101",
+                       "resnet152"]}
 
 
-def conv3x3(in_planes, out_planes, conv2d, stride=1):
+def conv3x3(in_planes, out_planes, conv2d, args, stride=1):
     """3x3 convolution with padding"""
     return conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                  padding=1, bias=False)
+                  padding=1, bias=False, args=args)
 
 
 class BasicBlock(nn.Module):
@@ -20,11 +21,12 @@ class BasicBlock(nn.Module):
     
     expansion = 1
 
-    def __init__(self, inplanes, planes, conv2d, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, conv2d, args, stride=1,
+                 downsample=None):
         super(BasicBlock, self).__init__()
-        self.conv1 = conv3x3(inplanes, planes, conv2d, stride)
+        self.conv1 = conv3x3(inplanes, planes, conv2d, args, stride)
         self.relu = nn.ReLU(inplace=True)
-        self.conv2 = conv3x3(planes, planes, conv2d)
+        self.conv2 = conv3x3(planes, planes, conv2d, args)
         self.downsample = downsample
         self.stride = stride
 
@@ -51,12 +53,15 @@ class Bottleneck(nn.Module):
     
     expansion = 4
 
-    def __init__(self, inplanes, planes, conv2d, stride=1, downsample=None):
+    def __init__(self, inplanes, planes, conv2d, args, stride=1,
+                 downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.conv1 = conv2d(inplanes, planes, kernel_size=1, bias=False,
+                            args=args)
         self.conv2 = conv2d(planes, planes, kernel_size=3, stride=stride,
-                            padding=1, bias=False)
-        self.conv3 = conv2d(planes, planes * 4, kernel_size=1, bias=False)
+                            padding=1, bias=False, args=args)
+        self.conv3 = conv2d(planes, planes * 4, kernel_size=1, bias=False,
+                            args=args)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
@@ -84,27 +89,27 @@ class Bottleneck(nn.Module):
 class ResNet(nn.Module):
 
     def __init__(self, block, layers, input_channels=3, num_classes=1000,
-                 width_multiplier=1, conv2d=fc.Conv2d):
+                 conv2d=fc.Conv2d, args=None):
         # db434: removed batch-norm layers because this is included within the
         # modified convolution implementations.
-        self.width = width_multiplier
-        self.inplanes = 64 * self.width
+        w = args.width_multiplier
+        self.inplanes = 64 * w
         
         super(ResNet, self).__init__()
-        self.conv1 = fc.Conv2d(input_channels, 64*self.width, kernel_size=7,
-                               stride=2, padding=3, bias=False)
+        self.conv1 = fc.Conv2d(input_channels, 64*w, kernel_size=7, stride=2,
+                               padding=3, bias=False, args=args)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64*self.width,  layers[0], conv2d)
-        self.layer2 = self._make_layer(block, 128*self.width, layers[1],
-                                       conv2d, stride=2)
-        self.layer3 = self._make_layer(block, 256*self.width, layers[2],
-                                       conv2d, stride=2)
-        self.layer4 = self._make_layer(block, 512*self.width, layers[3],
-                                       conv2d, stride=2)
+        self.layer1 = self._make_layer(block, 64*w,  layers[0], conv2d, args)
+        self.layer2 = self._make_layer(block, 128*w, layers[1], conv2d, args,
+                                       stride=2)
+        self.layer3 = self._make_layer(block, 256*w, layers[2], conv2d, args,
+                                       stride=2)
+        self.layer4 = self._make_layer(block, 512*w, layers[3], conv2d, args,
+                                       stride=2)
         self.avgpool = nn.AvgPool2d(7)
-        self.fc = conv2d(512 * self.width * block.expansion, num_classes,
-                         kernel_size=1)
+        self.fc = conv2d(512 * w * block.expansion, num_classes,
+                         kernel_size=1, args=args)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -114,18 +119,19 @@ class ResNet(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-    def _make_layer(self, block, planes, blocks, conv2d, stride=1):
+    def _make_layer(self, block, planes, blocks, conv2d, args, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
                 conv2d(self.inplanes, planes * block.expansion,
-                       kernel_size=1, stride=stride, bias=False)
+                       kernel_size=1, stride=stride, bias=False, args=args)
             )
 
-        layers = [block(self.inplanes, planes, conv2d, stride, downsample)]
+        layers = [block(self.inplanes, planes, conv2d, args, stride,
+                        downsample)]
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, conv2d))
+            layers.append(block(self.inplanes, planes, conv2d, args))
 
         return nn.Sequential(*layers)
 
@@ -155,23 +161,23 @@ class ResNetCifar(nn.Module):
     """
 
     def __init__(self, block, layers, input_channels=3, num_classes=10,
-                 width_multiplier=1, conv2d=fc.Conv2d):
+                 conv2d=fc.Conv2d, args=None):
         
-        self.width = width_multiplier
-        self.inplanes = 16 * self.width
+        w = args.width_multiplier
+        self.inplanes = 16 * w
         
         super(ResNetCifar, self).__init__()
-        self.conv1 = fc.Conv2d(input_channels, 16*self.width, kernel_size=3,
-                               padding=1, bias=False)
+        self.conv1 = fc.Conv2d(input_channels, 16*w, kernel_size=3,
+                               padding=1, bias=False, args=args)
         self.relu = nn.ReLU(inplace=True)
-        self.layer1 = self._make_layer(block, 16*self.width, layers[0], conv2d)
-        self.layer2 = self._make_layer(block, 32*self.width, layers[1], conv2d,
+        self.layer1 = self._make_layer(block, 16*w, layers[0], conv2d, args)
+        self.layer2 = self._make_layer(block, 32*w, layers[1], conv2d, args,
                                        stride=2)
-        self.layer3 = self._make_layer(block, 64*self.width, layers[2], conv2d,
+        self.layer3 = self._make_layer(block, 64*w, layers[2], conv2d, args,
                                        stride=2)
         self.avgpool = nn.AvgPool2d(8)
-        self.fc = conv2d(64 * self.width * block.expansion, num_classes,
-                         kernel_size=1)
+        self.fc = conv2d(64*w*block.expansion, num_classes,
+                         kernel_size=1, args=args)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -181,16 +187,18 @@ class ResNetCifar(nn.Module):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
 
-    def _make_layer(self, block, planes, blocks, conv2d, stride=1):
+    def _make_layer(self, block, planes, blocks, conv2d, args, stride=1):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = conv2d(self.inplanes, planes * block.expansion,
-                                kernel_size=1, stride=stride, bias=False)
+                                kernel_size=1, stride=stride, bias=False,
+                                args=args)
 
-        layers = [block(self.inplanes, planes, conv2d, stride, downsample)]
+        layers = [block(self.inplanes, planes, conv2d, args, stride,
+                        downsample)]
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
-            layers.append(block(self.inplanes, planes, conv2d))
+            layers.append(block(self.inplanes, planes, conv2d, args))
 
         return nn.Sequential(*layers)
 

@@ -1,6 +1,7 @@
 import torch.nn as nn
 from . import shuffle
 from . import wrapped
+from util import log
 
 
 # Same interface as torch.nn.Conv2d (except groups -> depth_multiplier).
@@ -25,7 +26,8 @@ class Conv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  depth_multiplier=1,
-                 bias=True):
+                 bias=True,
+                 **kwargs):
         super(Conv2d, self).__init__()
 
         # Channel numbers can be scaled by floats, so need to be rounded back
@@ -36,9 +38,9 @@ class Conv2d(nn.Module):
         # Special case: if kernel_size = 1, factorising the convolution doesn't
         # add anything.
         if kernel_size == 1:
-            print("INFO: using shuffle convolution instead of separable "
-                  "shuffle.")
-            print("  kernel_size = 1")
+            log.info("INFO: using shuffle convolution instead of separable "
+                     "shuffle.")
+            log.info("  kernel_size = 1")
             self.conv = nn.Sequential(
                 shuffle.Conv2d(in_channels=in_channels,
                                out_channels=out_channels,
@@ -47,7 +49,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                # groups=1,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 # Shuffle convolution includes its own normalisation.   
                 # nn.BatchNorm2d(out_channels)
@@ -67,7 +70,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=in_channels,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(in_channels * depth_multiplier),
                 nn.ReLU(inplace=True),
@@ -80,7 +84,8 @@ class Conv2d(nn.Module):
                                padding=0,
                                dilation=1,
                                # groups=1,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 # Shuffle convolution includes its own normalisation.         
                 # nn.BatchNorm2d(out_channels)

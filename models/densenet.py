@@ -5,13 +5,13 @@ from collections import OrderedDict
 
 import structured.fully_connected as fc
 
-__all__ = ['DenseNet', 'densenet121', 'densenet169', 'densenet201',
-           'densenet161']
+models = {"ImageNet": ["densenet121", "densenet169", "densenet201",
+                       "densenet161"]}
 
 
 class _DenseLayer(nn.Sequential):
     def __init__(self, num_input_features, growth_rate, bn_size, drop_rate,
-                 conv2d):
+                 conv2d, args):
         # db434: removed batch-norm layers because this is included within the
         # modified convolution implementations.
         super(_DenseLayer, self).__init__()
@@ -19,12 +19,12 @@ class _DenseLayer(nn.Sequential):
         self.add_module('relu.1', nn.ReLU(inplace=True)),
         self.add_module('conv.1', conv2d(num_input_features, bn_size *
                                          growth_rate, kernel_size=1, stride=1,
-                                         bias=False)),
+                                         bias=False, args=args)),
         # self.add_module('norm.2', nn.BatchNorm2d(bn_size * growth_rate)),
         self.add_module('relu.2', nn.ReLU(inplace=True)),
         self.add_module('conv.2', conv2d(bn_size * growth_rate, growth_rate,
                                          kernel_size=3, stride=1, padding=1,
-                                         bias=False)),
+                                         bias=False, args=args)),
         self.drop_rate = drop_rate
 
     def forward(self, x):
@@ -37,23 +37,24 @@ class _DenseLayer(nn.Sequential):
 
 class _DenseBlock(nn.Sequential):
     def __init__(self, num_layers, num_input_features, bn_size, growth_rate,
-                 drop_rate, conv2d):
+                 drop_rate, conv2d, args):
         super(_DenseBlock, self).__init__()
         for i in range(num_layers):
             layer = _DenseLayer(num_input_features + i * growth_rate,
-                                growth_rate, bn_size, drop_rate, conv2d)
+                                growth_rate, bn_size, drop_rate, conv2d, args)
             self.add_module('denselayer%d' % (i + 1), layer)
 
 
 class _Transition(nn.Sequential):
-    def __init__(self, num_input_features, num_output_features, conv2d):
+    def __init__(self, num_input_features, num_output_features, conv2d, args):
         # db434: removed batch-norm layer because this is included within the
         # modified convolution implementations.
         super(_Transition, self).__init__()
         # self.add_module('norm', nn.BatchNorm2d(num_input_features))
         self.add_module('relu', nn.ReLU(inplace=True))
         self.add_module('conv', conv2d(num_input_features, num_output_features,
-                                       kernel_size=1, stride=1, bias=False))
+                                       kernel_size=1, stride=1, bias=False,
+                                       args=args))
         self.add_module('pool', nn.AvgPool2d(kernel_size=2, stride=2))
 
 
@@ -75,10 +76,10 @@ class DenseNet(nn.Module):
 
     def __init__(self, growth_rate=32, block_config=(6, 12, 24, 16),
                  num_init_features=64, bn_size=4, drop_rate=0, num_classes=1000,
-                 input_channels=3, width_multiplier=1, conv2d=fc.Conv2d):
+                 input_channels=3, conv2d=fc.Conv2d, args=None):
 
         super(DenseNet, self).__init__()
-        self.width = width_multiplier
+        self.width = args.width_multiplier
 
         num_init_features *= self.width
         growth_rate *= self.width
@@ -89,7 +90,7 @@ class DenseNet(nn.Module):
         self.features = nn.Sequential(OrderedDict([
             ('conv0', fc.Conv2d(input_channels, num_init_features,
                                 kernel_size=7, stride=2, padding=3,
-                                bias=False)),
+                                bias=False, args=args)),
             # ('norm0', nn.BatchNorm2d(num_init_features)),
             ('relu0', nn.ReLU(inplace=True)),
             ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
@@ -101,13 +102,13 @@ class DenseNet(nn.Module):
             block = _DenseBlock(num_layers=num_layers,
                                 num_input_features=num_features,
                                 bn_size=bn_size, growth_rate=growth_rate,
-                                drop_rate=drop_rate, conv2d=conv2d)
+                                drop_rate=drop_rate, conv2d=conv2d, args=args)
             self.features.add_module('denseblock%d' % (i + 1), block)
             num_features = num_features + num_layers * growth_rate
             if i != len(block_config) - 1:
                 trans = _Transition(num_input_features=num_features,
                                     num_output_features=num_features // 2,
-                                    conv2d=conv2d)
+                                    conv2d=conv2d, args=args)
                 self.features.add_module('transition%d' % (i + 1), trans)
                 num_features = num_features // 2
 

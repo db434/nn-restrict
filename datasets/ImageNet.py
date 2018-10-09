@@ -4,6 +4,8 @@ import torch.utils.data as data
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 
+import locations
+
 
 # TODO subclass an abstract Dataset class.
 class ImageNet(object):
@@ -14,9 +16,12 @@ class ImageNet(object):
     # Some sensible defaults.
     name = "ImageNet"
     default_model = "alexnet"
+    location = locations.imagenet
+
+    # See training.lr_schedule.py for explanation.
+    default_lr = 0.1
+    default_lr_steps = [(30, 0.1), (30, 0.1)]
     default_epochs = 90
-    default_epoch_period = 30
-    location = "/local/scratch/ssd/raw-data"
                                               
     # classes = ???
     
@@ -37,7 +42,7 @@ class ImageNet(object):
     @staticmethod
     def train_loader(num_workers, batch_size, distributed):
         transform = transforms.Compose([
-            transforms.RandomSizedCrop(224),
+            transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             ImageNet._normalize,
@@ -60,7 +65,7 @@ class ImageNet(object):
     @staticmethod
     def val_loader(num_workers, batch_size):
         transform = transforms.Compose([
-            transforms.Scale(256),
+            transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             ImageNet._normalize,
@@ -78,7 +83,7 @@ class ImageNet(object):
     @staticmethod
     def test_loader(num_workers, batch_size):
         transform = transforms.Compose([
-            transforms.Scale(256),
+            transforms.Resize(256),
             transforms.CenterCrop(224),
             transforms.ToTensor(),
             ImageNet._normalize,

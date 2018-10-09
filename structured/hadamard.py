@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 from . import wrapped
+from util import log
 
 
 def _power_of_two(value):
@@ -105,8 +106,9 @@ class ChannelMixer(nn.Module):
         self.channels = channels
 
         if not self.can_use_hadamard:
-            print("INFO: using 1x1 convolution instead of Hadamard transform.")
-            print("  channels =", channels)
+            log.info("INFO: using 1x1 convolution instead of Hadamard "
+                    "transform.")
+            log.info("  channels =", channels)
             self.mix = nn.Sequential(
                 wrapped.Conv2d(in_channels=channels,
                                out_channels=channels,
@@ -148,7 +150,8 @@ class Conv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  depth_multiplier=1,
-                 bias=True):
+                 bias=True,
+                 **kwargs):
         super(Conv2d, self).__init__()
 
         # Channel numbers can be scaled by floats, so need to be rounded back
@@ -176,7 +179,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=in_channels,
-                               bias=False),
+                               bias=False,
+                               **kwargs),
 
                 nn.BatchNorm2d(in_channels),
 

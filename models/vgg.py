@@ -7,10 +7,8 @@ import structured.fully_connected as fc
 # TODO: convert Linear layers to convolution and nn.Conv2d to fc.Conv2d
 
 
-__all__ = [
-    'VGG', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
-    'vgg19_bn', 'vgg19',
-]
+models = {"ImageNet": ["vgg11", "vgg11_bn", "vgg13", "vgg13_bn", "vgg16",
+                       "vgg16_bn", "vgg19_bn", "vgg19"]}
 
 
 model_urls = {
@@ -28,7 +26,8 @@ model_urls = {
 class VGG(nn.Module):
 
     def __init__(self, version, batch_norm=False, input_channels=3,
-                 num_classes=1000, width_multiplier=1, conv2d=fc.Conv2d):
+                 num_classes=1000, width_multiplier=1, conv2d=fc.Conv2d,
+                 args=None):
         super(VGG, self).__init__()
         self.features = make_layers(configs[version], input_channels,
                                     batch_norm)

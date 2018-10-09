@@ -1,20 +1,9 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional
 
 from . import wrapped
 from util import log
-
-"""This version of the butterfly module is the "true" way of performing the
-computation, with O(nlogn) weights and computations. However, it relies on a
-large number of grouped convolutions, which are no faster than ordinary
-convolutions. Thus the speed of the module on GPUs is around n^2*logn, giving a
-large slowdown.
-
-The `butterfly` module replaces this one until there is better GPU support. For
-1x1 convolutions in that module, the weights of logn group convolution layers
-are pre-multiplied together, and then passed to a single convolution routine.
-This keeps the nlogn number of weights, but increases computation to n^2, the
-same as an ordinary convolution layer."""
 
 
 def _next_power_of_two(value):
@@ -117,7 +106,7 @@ class Conv2dSublayer(nn.Module):
 
         self.butterfly_size = butterfly_size
         self.butterflies = (self.intermediate_channels // 2) // \
-                           self.butterfly_size
+                            self.butterfly_size
 
         assert self.butterfly_size >= 2
         assert self.butterflies > 0 or self.expansion < 1
@@ -133,6 +122,9 @@ class Conv2dSublayer(nn.Module):
                                    dilation=dilation,
                                    groups=self.in_channels,
                                    bias=False)
+
+        self._weight_matrix_mask = None
+        self._weight_matrix = None
 
     def extract_sequences(self, data):
         """Separate data along the channel dimension into two smaller datasets.
@@ -150,8 +142,7 @@ class Conv2dSublayer(nn.Module):
                 split.select(2, 1).contiguous()
 
     def swap_wings(self, data):
-        """Swap the wings of each butterfly. A wing is a contiguous block of 
-        values with length butterfly_size / 2.
+        """Swap the wings of each butterfly.
     
         e.g. Butterfly size = 4
              Input  = 0 1 2 3   4 5 6 7
@@ -178,6 +169,82 @@ class Conv2dSublayer(nn.Module):
         merged = torch.cat([right, left], dim=2).contiguous()
 
         return merged.view(batch, channels, height, width)
+
+    def _weight_matrix_rows(self, column):
+        """Return the sequence of dense matrix rows which will be non-zero in
+        this column.
+        
+        Weights come in pairs and are spaced butterfly_size // 2 apart, and 
+        subsequent pairs are in_channels rows apart.
+        
+        The starting row increments by 1 for each column in the same wing,
+        resets for the second wing of the same butterfly, and increments by
+        butterfly_size for a new butterfly.
+        """
+        row = column % (self.butterfly_size // 2)
+        row += (column // self.butterfly_size) * self.butterfly_size
+
+        returned = 0
+
+        while row < self.out_channels:
+            assert returned < self.filters_per_channel
+            yield row
+            returned += 1
+
+            if returned % 2 == 0:  # Start new pair of weights
+                row += self.in_channels - (self.butterfly_size // 2)
+            else:  # Continue current pair of weights
+                row += self.butterfly_size // 2
+
+    def weight_matrix_mask(self):
+        """Return a ByteTensor showing which values in the dense weight matrix
+        are non-zero, to be used with `torch.masked_scatter_`. The output of
+        `torch.masked_scatter_` will need to be transposed since the scatter
+        function does not allow control over which value goes to which position.
+        """
+
+        mask = torch.ByteTensor(self.in_channels, self.out_channels)
+        mask.zero_()
+
+        for column in range(self.in_channels):
+            for row in self._weight_matrix_rows(column):
+                mask[column][row] = 1
+
+        in_channels, out_channels = mask.size()
+        assert in_channels == self.in_channels
+        assert out_channels == self.out_channels
+
+        return mask
+
+    def weight_matrix(self):
+        """Convert the sparse weights stored internally to a dense
+        representation which can be passed to an ordinary convolution routine.
+        
+        This will ultimately require more computation, but can perform better
+        on a GPU.
+        """
+
+        sparse = list(self.conv.parameters())[0]
+
+        # Initialise data buffers if this is the first time using them.
+        if self._weight_matrix is None:
+            self._weight_matrix_mask = self.weight_matrix_mask()
+            self._weight_matrix = torch.zeros(self._weight_matrix_mask.size())
+
+            if sparse.is_cuda:
+                self._weight_matrix_mask = self._weight_matrix_mask.cuda()
+                self._weight_matrix = self._weight_matrix.cuda()
+
+        dense = self._weight_matrix.fill_(0)
+        mask = self._weight_matrix_mask
+
+        mask = torch.autograd.Variable(mask, requires_grad=False)
+        dense = torch.autograd.Variable(dense)
+
+        dense.masked_scatter_(mask, sparse)
+        dense = dense.transpose(0, 1)  # Required by weight_matrix_mask()
+
+        return dense
 
     def forward(self, x):
         x = self.conv(x)
@@ -223,6 +290,9 @@ class Conv2d(nn.Module):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
+        self.stride = stride
+        self.padding = padding
+        self.dilation = dilation
 
         self.norm = nn.BatchNorm2d(out_channels)
 
@@ -294,12 +364,43 @@ class Conv2d(nn.Module):
         """Trim x so that it has the specified number of channels."""
         return x[:, :num_channels, :, :].contiguous()
 
-    def forward(self, x):
+    def can_use_fast_forward(self):
+        """Determine whether the parameters of this layer allow the GPU-
+        optimised computation to be used."""
+        # The technique takes the same pixel from each channel as a vector, and
+        # applies a transformation.
+        #  * This doesn't work if kernel_size > 1 because then more pixels are
+        #    needed.
+        #  * I get out-of-memory errors if there are too many channels because
+        #    the transformation matrix is size (in_channels)^2
+        return self.kernel_size == 1 and self.in_channels < 10000
 
+    def fast_forward(self, x):
+        """Despite orders of magnitude less computation, I haven't found a way
+        to execute a butterfly layer efficiently on a GPU.
+        
+        This function expands the weights out to the shape they would be in an
+        ordinary convolution layer, then applies ordinary convolution."""
+        assert self.can_use_fast_forward()
+
+        weights = None
+
+        for butterfly in self.conv.children():
+            if weights is None:
+                weights = butterfly.weight_matrix()
+            else:
+                weights = torch.matmul(butterfly.weight_matrix(), weights)
+
+        # Dimensions must be (out_chans, in_chan, kernel_height, kernel_width).
+        weights = weights.view(*weights.size(), 1, 1)
+
+        # TODO: could potentially have the weight matrix handle odd input/output
+        # sizes
         if self.expand_inputs:
             x = self.expand_to_power_of_two(x)
 
-        x = self.conv(x)
+        x = nn.functional.conv2d(x, weights, stride=self.stride,
+                                 padding=self.padding)
 
         if self.trim_outputs:
             x = self.trim(x, self.out_channels)
@@ -307,3 +408,24 @@ class Conv2d(nn.Module):
         x = self.norm(x)
 
         return x
+
+    def forward(self, x):
+
+        # TODO
+        # Try to avoid breaking the test which checks that the outputs are the
+        # same.
+
+        if self.can_use_fast_forward() and x.is_cuda:
+            return self.fast_forward(x)
+        else:
+            if self.expand_inputs:
+                x = self.expand_to_power_of_two(x)
+
+            x = self.conv(x)
+
+            if self.trim_outputs:
+                x = self.trim(x, self.out_channels)
+
+            x = self.norm(x)
+
+            return x

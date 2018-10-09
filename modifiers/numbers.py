@@ -1,11 +1,80 @@
-"""Module with various options for controlling number formats in the network.
-
-TODO:
- * Weights/activations
 """
- 
-import torch
+Module with various options for controlling number formats in the network.
+"""
+
+from collections.abc import Iterable
 import torch.nn.functional
+
+from .modules import *
+
+
+def transform_gradients(model, transformation):
+    """
+    Apply a transformation to all gradient computations in the model.
+
+    :param model: Model (or part of model) to apply the transformations on.
+    :param transformation: Function which takes a tensor and returns a
+    transformed tensor. A list of such functions is also accepted and will be
+    applied in order.
+    """
+
+    # Ensure the interface of the functions matches the way we receive
+    # gradients.
+    fn = _wrap_for_gradients(transformation)
+
+    # Only interested in bottom-level modules. Otherwise we might apply the
+    # same transformation multiple times.
+    # TODO: Check whether this quantises gradients of parameters. If not,
+    # consider using Tensor.register_hook() on all parameters.
+    leaves = (module for module in model.modules()
+              if len(list(module.children())) == 0)
+
+    for module in leaves:
+        module.register_backward_hook(fn)
+
+
+def transform_activations(model, transformation):
+    """
+    Apply a transformation to all activations in the model.
+
+    :param model: Model (or part of model) to apply the transformations on.
+    :param transformation: Function which takes a tensor and returns a
+    transformed tensor. A list of such functions is also accepted and will be
+    applied in order.
+    """
+
+    # Ensure the interface of the functions matches the way we receive
+    # activations.
+    fn = _wrap_for_activations(transformation)
+
+    # Only interested in Quantiser modules.
+    quantisers = (module for module in model.modules()
+                  if isinstance(module, Quantiser))
+
+    for module in quantisers:
+        module.set_quantisation(fn)
+
+
+def transform_weights(model, transformation):
+    """
+    Apply a transformation to all weights in the model.
+
+    :param model: Model (or part of model) to apply the transformations on.
+    :param transformation: Function which takes a tensor and returns a
+    transformed tensor. A list of such functions is also accepted and will be
+    applied in order.
+    """
+
+    # Ensure the interface of the functions matches the way we receive
+    # weights.
+    fn = _wrap_for_weights(transformation)
+
+    # Only interested in modules which can accept a weight transform function.
+    modules = (module for module in model.modules()
+               if hasattr(module, "set_weight_transform"))
+
+    for module in modules:
+        module.set_weight_transform(fn)
 
 
 def restrict_gradients(model, minimum=0.0, maximum=0.0, noise=0.0,
@@ -16,15 +85,7 @@ def restrict_gradients(model, minimum=0.0, maximum=0.0, noise=0.0,
     modifiers = _get_modifiers(minimum, maximum, noise, precision)
     
     if len(modifiers) > 0:
-        fn = _wrap_for_gradients(modifiers)
-        
-        # Only interested in bottom-level modules. Otherwise we might apply the
-        # same transformation multiple times.
-        leaves = (module for module in model.modules()
-                  if len(list(module.children())) == 0)
-                  
-        for module in leaves:
-            module.register_backward_hook(fn)
+        transform_gradients(model, modifiers)
 
 
 def restrict_activations(model, minimum=0.0, maximum=0.0, noise=0.0,
@@ -35,15 +96,7 @@ def restrict_activations(model, minimum=0.0, maximum=0.0, noise=0.0,
     modifiers = _get_modifiers(minimum, maximum, noise, precision)
     
     if len(modifiers) > 0:
-        fn = _wrap_for_activations(modifiers)
-        
-        # Only interested in bottom-level modules. Otherwise we might apply the
-        # same transformation multiple times.
-        leaves = (module for module in model.modules()
-                  if len(list(module.children())) == 0)
-                  
-        for module in leaves:
-            module.register_forward_hook(fn)
+        transform_activations(model, modifiers)
 
 
 def restrict_weights(model, minimum=0.0, maximum=0.0, noise=0.0, precision=0.0):
@@ -53,15 +106,7 @@ def restrict_weights(model, minimum=0.0, maximum=0.0, noise=0.0, precision=0.0):
     modifiers = _get_modifiers(minimum, maximum, noise, precision)
     
     if len(modifiers) > 0:
-        fn = _wrap_for_weights(modifiers)
-        
-        # Only interested in bottom-level modules. Otherwise we might apply the
-        # same transformation multiple times.
-        leaves = (module for module in model.modules()
-                  if len(list(module.children())) == 0)
-                  
-        for module in leaves:
-            module.register_forward_hook(fn)
+        transform_weights(model, modifiers)
 
 
 def _get_modifiers(minimum, maximum, noise, precision):
@@ -181,8 +226,8 @@ def _wrap_for_gradients(functions):
     function call which provides all necessary arguments for a backward hook.
     Can then be applied using `register_backward_hook(fn)`.
     """
-    assert len(functions) > 0
-    
+    functions = _make_iterable(functions)
+
     def backward_hook(module, grad_in, grad_out):
         return _map_tensor(functions, grad_in)
     
@@ -190,46 +235,44 @@ def _wrap_for_gradients(functions):
 
 
 def _wrap_for_activations(functions):
-    """Wraps a list of Tensor transformation functions to create a single
-    function call which provides all necessary arguments for a forward hook.
-    Can then be applied using `register_forward_hook(fn)`.
+    """Wrap a list of Tensor transformation functions to create a single
+    function call which takes a single tensor as its argument.
     """
-    print("Activation modification not currently supported.")
-    exit(1)
+    functions = _make_iterable(functions)
+    
+    def forward(tensor):
+        for fn in functions:
+            tensor = fn(tensor)
+        return tensor
 
-    # TODO
-    # So, while backward_hooks allow modified gradients to be returned,
-    # forward_hooks do not allow activations to be modified.
-    # Will probably need to add a new Module which does this sort of thing.
-    
-    assert len(functions) > 0
-    
-    def forward_hook(module, act_in, act_out):
-        return _map_tensor(functions, act_out)
-    
-    return forward_hook
+    return forward
 
 
 def _wrap_for_weights(functions):
-    """Wraps a list of Tensor transformation functions to create a single
-    function call which provides all necessary arguments for a forward hook.
-    Can then be applied using `register_forward_hook(fn)`.
+    """Wrap a list of Tensor transformation functions to create a single
+    function call which takes a single tensor as its argument.
     """
-    print("Weight modification not currently supported.")
-    exit(1)
+    functions = _make_iterable(functions)
 
-    # TODO
-    # Need a different approach here: forward_hooks are called after computation
-    # has finished, which is too late. Perhaps in register_forward_pre_hook,
-    # store the module's weights under a different name and replace them with
-    # a modified version. Probably change them back with register_forward_hook.
-    
-    assert len(functions) > 0
-    
-    def forward_hook(module, act_in, act_out):
-        return _map_tensor(functions, act_out)
-    
-    return forward_hook
+    def forward(tensor):
+        for fn in functions:
+            tensor = fn(tensor)
+        return tensor
+
+    return forward
+
+
+def _make_iterable(data):
+    """
+    If a value is not already iterable, make it so.
+
+    :param data: Arbitrary data.
+    :return: Iterable object containing `data`.
+    """
+    if not isinstance(data, Iterable):
+        data = [data]
+
+    return data
 
 
 def _map_tensor(functions, tensors):

@@ -1,43 +1,44 @@
 import torch.nn as nn
 import structured.fully_connected as fc
 
-__all__ = ['AaronNet', 'aaronnet', 'AaronNet2', 'aaronnet_v2']
+models = {"CIFAR-10": ["aaronnet", "aaronnet_v2"]}
 
 
 class AaronNet(nn.Module):
 
-    def __init__(self, input_channels=3, num_classes=10, width_multiplier=1,
-                 conv2d=fc.Conv2d):
+    def __init__(self, input_channels=3, num_classes=10, conv2d=fc.Conv2d,
+                 args=None):
         super(AaronNet, self).__init__()
         self.classes = num_classes
-        self.width = width_multiplier
+        w = args.width_multiplier
         
         self.features = nn.Sequential(
-            fc.Conv2d(input_channels, 128*self.width, kernel_size=3, padding=1),
+            fc.Conv2d(input_channels, 128*w, kernel_size=3, padding=1,
+                      args=args),
             nn.ReLU(inplace=True),
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
             
             nn.MaxPool2d(kernel_size=3, stride=2),
             
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
+            nn.ReLU(inplace=True),
+            
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
+            nn.ReLU(inplace=True),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
             
             nn.AvgPool2d(kernel_size=7, stride=2, padding=0),
             
             nn.Dropout(),
-            conv2d(128*self.width, num_classes, kernel_size=1, padding=0),
+            conv2d(128*w, num_classes, kernel_size=1, padding=0, args=args),
         )
 
     def forward(self, x):
@@ -47,41 +48,40 @@ class AaronNet(nn.Module):
 
 class AaronNet2(nn.Module):
 
-    def __init__(self, input_channels=3, num_classes=10, width_multiplier=1,
-                 conv2d=fc.Conv2d):
+    def __init__(self, input_channels=3, num_classes=10, conv2d=fc.Conv2d,
+                 args=None):
         super(AaronNet2, self).__init__()
         self.classes = num_classes
-        self.width = width_multiplier
+        w = args.width_multiplier
         
         self.features = nn.Sequential(
-            fc.Conv2d(input_channels, 64*self.width, kernel_size=3, padding=1),
+            fc.Conv2d(input_channels, 64*w, kernel_size=3, padding=1,
+                      args=args),
             nn.ReLU(inplace=True),
-            conv2d(64*self.width, 64*self.width, kernel_size=3, padding=1),
+            conv2d(64*w, 64*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
-            conv2d(64*self.width, 128*self.width, kernel_size=3, padding=1,
-                   stride=2),
+            conv2d(64*w, 128*w, kernel_size=3, padding=1, stride=2, args=args),
             nn.ReLU(inplace=True),            
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
             
             nn.Dropout(p=0.5),
             
-            conv2d(128*self.width, 128*self.width, kernel_size=3, padding=1),
+            conv2d(128*w, 128*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),            
-            conv2d(128*self.width, 192*self.width, kernel_size=3, padding=1,
-                   stride=2),
+            conv2d(128*w, 192*w, kernel_size=3, padding=1, stride=2, args=args),
             nn.ReLU(inplace=True),
-            conv2d(192*self.width, 192*self.width, kernel_size=3, padding=1),
+            conv2d(192*w, 192*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
             
             nn.Dropout(p=0.5),
             
-            conv2d(192*self.width, 192*self.width, kernel_size=3, padding=1),
+            conv2d(192*w, 192*w, kernel_size=3, padding=1, args=args),
             nn.ReLU(inplace=True),
             
             nn.AvgPool2d(kernel_size=8, padding=0),
             
-            conv2d(192*self.width, num_classes, kernel_size=1, padding=0),
+            conv2d(192*w, num_classes, kernel_size=1, padding=0, args=args),
         )
 
     def forward(self, x):

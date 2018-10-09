@@ -1,6 +1,7 @@
 import torch.nn as nn
 
 from . import wrapped
+from util import log
 
 
 # As introduced in:
@@ -25,7 +26,8 @@ class Conv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  groups=8,  # Sensible default
-                 bias=True):
+                 bias=True,
+                 **kwargs):
         super(Conv2d, self).__init__()
 
         # Channel numbers can be scaled by floats, so need to be rounded back
@@ -37,9 +39,9 @@ class Conv2d(nn.Module):
         # Could instead reduce number of groups to fit, but I think this is
         # simpler.
         if in_channels < groups or out_channels < groups:
-            print("INFO: using default convolution instead of deep roots.")
-            print("  Inputs:", in_channels, ", outputs:", out_channels,
-                  ", groups:", groups)
+            log.info("INFO: using default convolution instead of deep roots.")
+            log.info("  Inputs:", in_channels, ", outputs:", out_channels,
+                     ", groups:", groups)
 
             self.conv = nn.Sequential(
                 wrapped.Conv2d(in_channels=in_channels,
@@ -49,7 +51,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=1,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(out_channels),
             )
@@ -66,7 +69,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=groups,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(out_channels),
 
@@ -80,7 +84,8 @@ class Conv2d(nn.Module):
                                padding=0,
                                dilation=1,
                                groups=1,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(out_channels),
             )

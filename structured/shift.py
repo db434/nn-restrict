@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional
 
 from . import wrapped
+from util import log
 
 
 class Shift(nn.Module):
@@ -95,7 +96,8 @@ class Conv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  groups=1,
-                 bias=True):
+                 bias=True,
+                 **kwargs):
         super(Conv2d, self).__init__()
 
         # Channel numbers can be scaled by floats, so need to be rounded back
@@ -106,8 +108,8 @@ class Conv2d(nn.Module):
         # Special cases:
         #  * If kernel_size = 1, there is no room to express a shift direction.
         if kernel_size == 1:
-            print("INFO: using default convolution instead of shift.")
-            print("  kernel_size = 1")
+            log.info("INFO: using default convolution instead of shift.")
+            log.info("  kernel_size = 1")
             self.conv = nn.Sequential(
                 wrapped.Conv2d(in_channels=in_channels,
                                out_channels=out_channels,
@@ -116,7 +118,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=groups,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(in_channels),
             )
@@ -141,7 +144,8 @@ class Conv2d(nn.Module):
                                padding=0,
                                dilation=1,
                                groups=groups,
-                               bias=False),
+                               bias=False,
+                               **kwargs),
 
                 # Shift (replaces KxK convolution).
                 Shift(intermediate_channels, kernel_size, dilation),
@@ -157,7 +161,8 @@ class Conv2d(nn.Module):
                                padding=0,
                                dilation=1,
                                groups=groups,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
             )
 
     def forward(self, x):

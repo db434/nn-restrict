@@ -1,6 +1,7 @@
 import torch.nn as nn
 
 from . import wrapped
+from util import log
 
 
 # A simplification of the module used in:
@@ -31,7 +32,8 @@ class Conv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  groups=8,  # Sensible default from paper (ImageNet models)
-                 bias=True):
+                 bias=True,
+                 **kwargs):
         super(Conv2d, self).__init__()
 
         # Channel numbers can be scaled by floats, so need to be rounded back
@@ -44,9 +46,9 @@ class Conv2d(nn.Module):
         # simpler.
         if in_channels < groups or out_channels < groups or \
                 in_channels % groups != 0 or out_channels % groups != 0:
-            print("INFO: using default convolution instead of shuffle.")
-            print("  Inputs:", in_channels, ", outputs:", out_channels,
-                  ", groups:", groups)
+            log.info("INFO: using default convolution instead of shuffle.")
+            log.info("  Inputs:", in_channels, ", outputs:", out_channels,
+                     ", groups:", groups)
 
             self.groups = 1
             self.conv = nn.Sequential(
@@ -57,7 +59,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=1,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(out_channels)
             )
@@ -74,7 +77,8 @@ class Conv2d(nn.Module):
                                padding=padding,
                                dilation=dilation,
                                groups=groups,
-                               bias=bias),
+                               bias=bias,
+                               **kwargs),
 
                 nn.BatchNorm2d(out_channels)
             )

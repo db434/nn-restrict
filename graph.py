@@ -4,6 +4,7 @@ import csv
 import matplotlib.pyplot as plt
 
 import structured
+from util import log
 
 
 def get_fields(csv_file, fields):
@@ -56,7 +57,7 @@ def get_conv_type(filename):
         if conv_type in filename:
             return conv_type
     else:
-        print("Couldn't detect convolution type of", filename)
+        log.error("Couldn't detect convolution type of", filename)
         exit(1)
 
 

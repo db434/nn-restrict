@@ -5,6 +5,9 @@ import shutil
 import time
 import torch
 
+from modifiers.modules import Quantisable
+from util import log
+
 """Data written to a log file at the end of each epoch."""
 log_data = ["Time", "Epoch", "Train loss", "Train top1",
             "Train top5", "Val loss", "Val top1", "Val top5"]
@@ -28,18 +31,18 @@ def load_path(path, model, optimizer):
     """Load a checkpoint from a named file."""
     
     if os.path.isfile(path):
-        print("Loading checkpoint '{}'".format(path))
+        log.info("Loading checkpoint '{}'".format(path))
         checkpoint = torch.load(path)
         start_epoch = checkpoint['epoch']
         best_prec1 = checkpoint['best_prec1']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
-        print("Loaded checkpoint '{}' (epoch {})"
-              .format(path, checkpoint['epoch']))
+        log.info("Loaded checkpoint '{}' (epoch {})"
+                 .format(path, checkpoint['epoch']))
               
         return start_epoch, best_prec1
     else:
-        print("No checkpoint found at '{}'".format(path))
+        log.error("No checkpoint found at '{}'".format(path))
         exit(1)
 
 
@@ -54,6 +57,11 @@ def save(directory, model, model_name, optimizer, epoch, best_prec1, is_best):
     best_prec1: best top1 accuracy achieved by this network so far
     is_best:    does the current model achieve best_prec1 accuracy?
     """
+    # If the model computes using quantised parameters, restore the full
+    # precision ones before storing.
+    if isinstance(model, Quantisable):
+        model.restore_parameters()
+
     state = {
         'epoch': epoch + 1,
         'arch': model_name,
@@ -90,8 +98,8 @@ def save_tensor(directory, description, tensor):
     tensor.dump(path)
 
 
-def log(directory, model_name, epoch, train_loss, train_top1, train_top5,
-        val_loss, val_top1, val_top5):
+def log_stats(directory, model_name, epoch, train_loss, train_top1, train_top5,
+              val_loss, val_top1, val_top5):
     """Log the current performance to a file in the csv format."""
     
     log_file_path = os.path.join(directory, model_name + ".csv")
