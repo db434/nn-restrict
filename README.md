@@ -14,7 +14,7 @@ Options:
  * [Butterfly](https://dawn.cs.stanford.edu/2019/06/13/butterfly/)
  * [Deep roots](https://arxiv.org/abs/1605.06489)
  * [Depthwise-separable](https://arxiv.org/abs/1610.02357)
-  * Also depthwise-butterfly and depthwise-shuffle
+   * Also depthwise-butterfly and depthwise-shuffle
  * [Shift](https://arxiv.org/abs/1711.08141)
  * [Shuffle](https://arxiv.org/abs/1707.01083)
 
